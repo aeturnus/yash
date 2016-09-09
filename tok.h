@@ -31,9 +31,9 @@ Tokenizer * Tokenizer_new(const char *str, const char *delimiters);
 
 /**
  * Tokenizer_delete
- * Deletes a tokenizer and sets its handle to null
+ * Deletes a tokenizer
  */
-void Tokenizer_delete(Tokenizer **this);
+void Tokenizer_delete(Tokenizer *this);
 
 /**
  * Tokenizer_next

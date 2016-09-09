@@ -51,8 +51,10 @@ int replaceFile( int toClose, const char * filepath, int flags, mode_t mode )
 }
 
 #define RWURGRO ( S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH )
-int setupExec( Tokenizer *tok, char **argList[] )
+int parseCommand( Command *cmd, char **argList[] )
 {
+
+    Tokenizer *tok = cmd->tok;
     const char * token;
     VVector *args = VVector_new(1);
     while( Tokenizer_hasTokens(tok) )
@@ -83,7 +85,7 @@ int setupExec( Tokenizer *tok, char **argList[] )
     }
     // Set up the arglist
     int argc = VVector_length(args);
-    char ** argv = malloc(sizeof(char *) * argc + 1);       // leave room for null
+    char ** argv = malloc(sizeof(char *) * (argc + 1) );       // leave room for null
     for( int i = 0; i < argc; i++ )
     {
         argv[i] = VVector_get(args, i);    // set up the args
@@ -97,41 +99,96 @@ int setupExec( Tokenizer *tok, char **argList[] )
     return 1;
 }
 
-pid_t forkexec( Tokenizer *tok )
+void setupPipes( Command *cmd )
 {
-    pid_t cpid = fork();
+    Pipe *inPipe = cmd->inPipe;
+    Pipe *outPipe = cmd->outPipe;
+    if(inPipe)
+    {
+        close(inPipe->fd[0]);               // close off the write end
+        dup2(inPipe->fd[1], STDIN_FILENO);  // dup to stdin
+        close(inPipe->fd[1]);               // we're done with this new fd
+    }
+    if(outPipe)
+    {
+        close(outPipe->fd[1]);                  // close off the write end
+        dup2(outPipe->fd[0], STDOUT_FILENO);    // dup to stdout
+        close(outPipe->fd[0]);                  // we're done with this new fd
+    }
+}
 
+pid_t forkexec( Command *cmd )
+{
+
+    pid_t cpid = fork();
     // child do the work
     if(cpid == 0)
     {
-        //TODO: copy my environment variables
         char **argList;
-        if( !setupExec( tok, &argList ) )
+        if( !parseCommand( cmd, &argList ) )
         {
             printf("Child failed to setup exec!\n");
-            exit(1);
+            return 0;
         }
+
+        setupPipes( cmd );
+        //TODO: copy my environment variables
         execvp(argList[0], argList);
+        free(argList);
     }
 
     return cpid;
 }
 
-void parse( Shell * shell )
+void parseLine( Shell * shell )
 {
     Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
-    int numTasks = Tokenizer_numTokens( tok );          // get the number of tasks
-    if( numTasks == 1 )
+    int numCmds = Tokenizer_numTokens( tok );          // get the number of tasks
+    if( numCmds == 1 )
     {
         pid_t cpid;
-        Tokenizer *tok1 = Tokenizer_new( Tokenizer_next(tok), " " );
-        cpid = forkexec( tok1 );
+        Command cmd;
+        Command_ctor( &cmd, Tokenizer_next(tok) );
+        cpid = forkexec( &cmd );
         waitpid(cpid);
+        Command_dtor( &cmd );
     }
-    else
+    else if (numCmds > 1)
     {
+        // need a list of commands and pipes
+        Command **cmds = malloc( sizeof(Command) * numCmds );
+        Pipe *pipes = malloc( sizeof(Pipe) * (numCmds-1) );
+        pid_t *cpids = malloc( sizeof(pid_t) * numCmds );
 
+        // TODO: smarter way of pipe creation and close in parent
+        for( int i = 0; i < numCmds; i++)
+        {
+            cmds[i] = Command_new(Tokenizer_next(tok)); // new command
+        }
+        for( int i = 0; i < numCmds-1; i++)
+        {
+            pipe(pipes[i].fd);
+        }
+
+        // fork and execute
+        for( int i = 0; i < numCmds; i++)
+        {
+            cpids[i] = forkexec(cmds[i]);
+        }
+
+        // delete commands, shut down the pipes
+        for( int i = 0; i < numCmds; i++)
+        {
+            waitpid(cpids[i]);
+            Command_delete(cmds[i]);
+        }
+        for( int i = 0; i < numCmds-1; i++)
+        {
+        }
+        free(cmds);
+        free(pipes);
     }
+    Tokenizer_delete(tok);
 }
 
 int main( int argc, char *argv[] )
@@ -149,6 +206,6 @@ int main( int argc, char *argv[] )
     while(1)
     {
         prompt( yash );
-        parse( yash );
+        parseLine( yash );
     }
 }

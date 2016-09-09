@@ -3,6 +3,8 @@
 
 #include <stdlib.h>
 
+#include "tok.h"
+
 #define CWD_SIZE 1000
 #define PROMPT_SIZE 1000
 #define LINE_SIZE 2000
@@ -20,11 +22,24 @@ typedef enum
     ACTIVE,
     INACTIVE
 } ProcessState;
+
 typedef struct
 {
     pid_t pid;
     ProcessState state;
 } Process;
+
+typedef struct
+{
+    int fd[2];
+} Pipe;
+
+typedef struct
+{
+    Tokenizer *tok;     // tokenizer
+    Pipe *inPipe;
+    Pipe *outPipe;
+} Command;
 
 /**
  * Constructor
@@ -48,5 +63,10 @@ void Shell_delete( Shell **handle);
  * @param prompt The prompt string
  */
 void Shell_setPrompt( Shell *this, const char *prompt );
+
+void Command_ctor( Command *this, const char *line );
+void Command_dtor( Command *this );
+Command *Command_new( const char *line );
+void Command_delete( Command *this );
 
 #endif //__SHELL_H__

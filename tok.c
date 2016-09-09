@@ -57,14 +57,13 @@ Tokenizer* Tokenizer_new(const char *str, const char *del)
     return tokenizer;
 }
 
-void Tokenizer_delete(Tokenizer **handle)
+void Tokenizer_delete(Tokenizer *this)
 {
-    if( *handle == NULL )
+    if( this == NULL )
         return;
-    Tokenizer_dtor( *handle);
+    Tokenizer_dtor( this );
     //Free the struct
-    free(*handle);
-    handle = NULL;
+    free(this);
 }
 
 // Get the next string in the tokenizer
