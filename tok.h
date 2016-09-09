@@ -112,7 +112,8 @@ char **Tokenizer_tokens_cpy(Tokenizer *this);
  * @param array Array to populate
  */
 
- void Tokenizer_populateArray(Tokenizer *this, char *array[]);
+void Tokenizer_populateArray(Tokenizer *this, char *array[]);
 
+void Tokenizer_print( Tokenizer *this );
 
 #endif

@@ -14,10 +14,17 @@ typedef struct
     char *line;
 } Shell;
 
+
+typedef enum
+{
+    ACTIVE,
+    INACTIVE
+} ProcessState;
 typedef struct
 {
-
-} Task;
+    pid_t pid;
+    ProcessState state;
+} Process;
 
 /**
  * Constructor

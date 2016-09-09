@@ -4,9 +4,13 @@
 
 #include <unistd.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "shell.h"
 #include "tok.h"
+#include "vvector.h"
 
 pid_t pid;
 
@@ -26,19 +30,74 @@ void prompt( Shell *sh )
     gets( sh->line );
 }
 
-// arglist must have already been allocated
-char ** copyArgs( int argc, const char * const * argv, char *argList[] )
+
+int replaceFile( int toClose, const char * filepath, int flags, mode_t mode )
 {
-    argList = malloc(sizeof(char *) * argc + 1); // +1 for NULL
-    for( int i = 0; i < argc; i++ )
+    int status = 0;
+    status = close(toClose);
+    if( status != 0 )
+        return 0;
+    int fd = open(filepath, flags, mode);
+    if( fd < 0 )
     {
-        argList[i] = strdup( argv[i] );
+        return 0;
     }
-    argList[argc] = NULL;
-    return argList;
+
+    /*
+    dup(fd);    // duplicate it
+    close(fd);
+    */
+    return 1;
 }
 
-pid_t forkexec( int argc, const char * const * argv )
+#define RWURGRO ( S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH )
+int setupExec( Tokenizer *tok, char **argList[] )
+{
+    const char * token;
+    VVector *args = VVector_new(1);
+    while( Tokenizer_hasTokens(tok) )
+    {
+        token = Tokenizer_next(tok);
+        if( !strcmp( token, ">" ) )
+        {
+            if( !Tokenizer_hasTokens )
+                return 0;
+            replaceFile( STDOUT_FILENO, Tokenizer_next(tok), O_WRONLY | O_CREAT, RWURGRO );
+        }
+        else if ( !strcmp( token, "2>" ) )
+        {
+            if( !Tokenizer_hasTokens )
+                return 0;
+            replaceFile( STDERR_FILENO, Tokenizer_next(tok), O_WRONLY | O_CREAT, RWURGRO );
+        }
+        else if ( !strcmp( token, "<" ) )
+        {
+            if( !Tokenizer_hasTokens )
+                return 0;
+            replaceFile( STDIN_FILENO, Tokenizer_next(tok), O_RDONLY, RWURGRO );
+        }
+        else
+        {
+            VVector_push( args, token );
+        }
+    }
+    // Set up the arglist
+    int argc = VVector_length(args);
+    char ** argv = malloc(sizeof(char *) * argc + 1);       // leave room for null
+    for( int i = 0; i < argc; i++ )
+    {
+        argv[i] = VVector_get(args, i);    // set up the args
+    }
+    argv[argc] = NULL;    // null terminator
+
+    // clean up!
+    VVector_delete(args);
+
+    *argList = argv;
+    return 1;
+}
+
+pid_t forkexec( Tokenizer *tok )
 {
     pid_t cpid = fork();
 
@@ -47,7 +106,11 @@ pid_t forkexec( int argc, const char * const * argv )
     {
         //TODO: copy my environment variables
         char **argList;
-        argList = copyArgs( argc, argv, argList );
+        if( !setupExec( tok, &argList ) )
+        {
+            printf("Child failed to setup exec!\n");
+            exit(1);
+        }
         execvp(argList[0], argList);
     }
 
@@ -62,7 +125,7 @@ void parse( Shell * shell )
     {
         pid_t cpid;
         Tokenizer *tok1 = Tokenizer_new( Tokenizer_next(tok), " " );
-        cpid = forkexec( Tokenizer_numTokens(tok1), Tokenizer_tokens(tok1) );
+        cpid = forkexec( tok1 );
         waitpid(cpid);
     }
     else

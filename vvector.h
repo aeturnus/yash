@@ -11,14 +11,15 @@ void VVector_delete(VVector* vector);        // uses lite
 void VVector_deleteLite(VVector* vector);    // free vector structure but not internal contents
 void VVector_deleteFull(VVector* vector);    // free vector and all internal contents
 
-void VVector_push(VVector* vector, void* ptr);   // Get value from index
-void* VVector_pop(VVector* vector);   // Get value from index
+void VVector_push(VVector* vector, void* ptr);   // Adds value to end
+void* VVector_pop(VVector* vector);              // Pops off value off end
 
 void* VVector_get(VVector* vector, int index);   // Get value from index
 
 void VVector_realloc(VVector* vector, int newSize); //Reallocates the vector to a new size. Will only make it bigger.
 
-void** VVector_toArray(VVector* vector);    //Returns an array with the values;
+const void * const * VVector_toArray(VVector* vector);        //Returns an array with the values;
+void** VVector_toArray_cpy(VVector* vector);    //Returns an array with the values, shallow copied;
 
 int VVector_length(VVector* vector);    //reports length of the vector
 int VVector_length(VVector* vector);    //reports size of the vector

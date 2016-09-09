@@ -17,7 +17,8 @@ void Tokenizer_ctor( Tokenizer *this, const char *str, const char *del)
     if( this == NULL )
         return;
     VVector* vec = VVector_new(1);
-    char* tok = strtok(str,del);
+    char *buffer = strdup(str);     // have a working buffer
+    char* tok = strtok(buffer,del);
     while(tok != NULL)
     {
         VVector_push(vec,strdup(tok));  //Push the string into the vector
@@ -25,9 +26,10 @@ void Tokenizer_ctor( Tokenizer *this, const char *str, const char *del)
     }
 
     this->pos = 0;
-    this->length = VVector_length(vec);    //get the size of the array returned
-    this->elements = (char**)VVector_toArray(vec); //get the array of strings
+    this->length = VVector_length(vec);                 //get the size of the array returned
+    this->elements = (char**)VVector_toArray_cpy(vec);  //get the array of strings
     VVector_delete(vec);    //free the vector
+    free(buffer);
 }
 
 void Tokenizer_dtor( Tokenizer *this )
@@ -174,5 +176,14 @@ void Tokenizer_populateArray(Tokenizer* this, char *array[])
     for(int i = 0; i < len; i++)
     {
         array[i] = strdup(this->elements[i]);
+    }
+}
+
+void Tokenizer_print(Tokenizer *this)
+{
+    int len = this->length;
+    for(int i = 0; i < len; i++)
+    {
+        printf("Token #%d: %s\n", i, this->elements[i]);
     }
 }
