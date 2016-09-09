@@ -1,6 +1,6 @@
 CC = gcc
 LD = ld
-CFLAGS =-Wall -Wextra
+CFLAGS =-Wall -Wextra -g
 SOURCES = $(wildcard *.c)
 EXECUTABLE = yash
 

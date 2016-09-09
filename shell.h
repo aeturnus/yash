@@ -14,17 +14,32 @@ typedef struct
     char *line;
 } Shell;
 
+typedef struct
+{
+
+} Task;
+
 /**
  * Constructor
  * Will construct the shell object
  */
-Shell_ctor( Shell *this );
+void Shell_ctor( Shell *this );
 
 /**
- * Constructor
+ * Destructor
  * Will destroy the shell object
  */
 
-Shell_dtor( Shell *this );
+void Shell_dtor( Shell *this );
+
+Shell * Shell_new( void );
+void Shell_delete( Shell **handle);
+
+/**
+ * setPrompt
+ * Will set the shell's prompt
+ * @param prompt The prompt string
+ */
+void Shell_setPrompt( Shell *this, const char *prompt );
 
 #endif //__SHELL_H__
