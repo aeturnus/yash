@@ -105,15 +105,15 @@ void setupPipes( Command *cmd )
     Pipe *outPipe = cmd->outPipe;
     if(inPipe)
     {
-        close(inPipe->fd[0]);               // close off the write end
-        dup2(inPipe->fd[1], STDIN_FILENO);  // dup to stdin
-        close(inPipe->fd[1]);               // we're done with this new fd
+        close(inPipe->fd[1]);               // close off the write end
+        dup2(inPipe->fd[0], STDIN_FILENO);  // dup to stdin
+        close(inPipe->fd[0]);               // we're done with this new fd
     }
     if(outPipe)
     {
-        close(outPipe->fd[1]);                  // close off the write end
-        dup2(outPipe->fd[0], STDOUT_FILENO);    // dup to stdout
-        close(outPipe->fd[0]);                  // we're done with this new fd
+        close(outPipe->fd[0]);                  // close off the read end
+        dup2(outPipe->fd[1], STDOUT_FILENO);    // dup to stdout
+        close(outPipe->fd[1]);                  // we're done with this new fd
     }
 }
 
@@ -170,6 +170,17 @@ void parseLine( Shell * shell )
             pipe(pipes[i].fd);
         }
 
+        // Connect the pipes
+        cmds[0]->inPipe = NULL;             // first process pipe
+        cmds[0]->outPipe = &pipes[0];
+        for( int i = 1; i < numCmds-1; i++ )
+        {
+            cmds[i]->inPipe = &pipes[i-1];
+            cmds[i]->outPipe = &pipes[i];
+        }
+        cmds[numCmds-1]->inPipe = &pipes[numCmds-2];  // second process pipe
+        cmds[numCmds-1]->outPipe = NULL;
+
         // fork and execute
         for( int i = 0; i < numCmds; i++)
         {
@@ -184,6 +195,7 @@ void parseLine( Shell * shell )
         }
         for( int i = 0; i < numCmds-1; i++)
         {
+            close(pipes[i]
         }
         free(cmds);
         free(pipes);
