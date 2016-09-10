@@ -107,64 +107,65 @@ void setupPipes( Command *cmd )
     {
         close(inPipe->fd[1]);               // close off the write end
         dup2(inPipe->fd[0], STDIN_FILENO);  // dup to stdin
-        close(inPipe->fd[0]);               // we're done with this new fd
+        //close(inPipe->fd[0]);               // we're done with this new fd
     }
     if(outPipe)
     {
         close(outPipe->fd[0]);                  // close off the read end
         dup2(outPipe->fd[1], STDOUT_FILENO);    // dup to stdout
-        close(outPipe->fd[1]);                  // we're done with this new fd
+        //close(outPipe->fd[1]);                  // we're done with this new fd
     }
 }
 
-pid_t forkexec( Command *cmd )
+void cleanPipes( Pipe *pipes, int numPipes  )
+{
+    for( int i = 0; i < numPipes; i++ )
+    {
+        close(pipes[i].fd[0]);
+        close(pipes[i].fd[1]);
+    }
+}
+
+void exec( Command *cmd, Pipe *pipes, int numPipes )
+{
+    char **argList;
+    if( !parseCommand( cmd, &argList ) )
+    {
+        printf("Child failed to setup exec!\n");
+        return 0;
+    }
+    if( pipes )
+    {
+        setupPipes( cmd );
+        cleanPipes( pipes, numPipes );
+    }
+    //TODO: copy my environment variables
+    execvp(argList[0], argList);
+    free(argList);
+}
+
+pid_t forkexec( Command *cmd, Pipe *pipes, int numPipes )
 {
 
     pid_t cpid = fork();
     // child do the work
     if(cpid == 0)
     {
-        char **argList;
-        if( !parseCommand( cmd, &argList ) )
-        {
-            printf("Child failed to setup exec!\n");
-            return 0;
-        }
-
-        setupPipes( cmd );
-        //TODO: copy my environment variables
-        execvp(argList[0], argList);
-        free(argList);
+        exec(cmd,pipes,numPipes);
     }
 
     return cpid;
 }
 
-void parseLine( Shell * shell )
+// similar to forkexec, but starts a new group
+pid_t forkexec_grp( Command **cmds, int numCmds )
 {
-    Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
-    int numCmds = Tokenizer_numTokens( tok );          // get the number of tasks
-    if( numCmds == 1 )
+    pid_t cpid = fork();
+    if( cpid == 0 )
     {
-        pid_t cpid;
-        Command cmd;
-        Command_ctor( &cmd, Tokenizer_next(tok) );
-        cpid = forkexec( &cmd );
-        waitpid(cpid);
-        Command_dtor( &cmd );
-    }
-    else if (numCmds > 1)
-    {
-        // need a list of commands and pipes
-        Command **cmds = malloc( sizeof(Command) * numCmds );
+        setsid();   // new session!
+        // setup the pipes
         Pipe *pipes = malloc( sizeof(Pipe) * (numCmds-1) );
-        pid_t *cpids = malloc( sizeof(pid_t) * numCmds );
-
-        // TODO: smarter way of pipe creation and close in parent
-        for( int i = 0; i < numCmds; i++)
-        {
-            cmds[i] = Command_new(Tokenizer_next(tok)); // new command
-        }
         for( int i = 0; i < numCmds-1; i++)
         {
             pipe(pipes[i].fd);
@@ -181,24 +182,59 @@ void parseLine( Shell * shell )
         cmds[numCmds-1]->inPipe = &pipes[numCmds-2];  // second process pipe
         cmds[numCmds-1]->outPipe = NULL;
 
-        // fork and execute
-        for( int i = 0; i < numCmds; i++)
+        // fork the children!
+        for( int i = 1; i < numCmds; i++ )
         {
-            cpids[i] = forkexec(cmds[i]);
+            forkexec( cmds[i], pipes, numCmds-1 );
         }
+        // glorious leader gets his turn
+        exec( cmds[0], pipes, numCmds-1 );
 
-        // delete commands, shut down the pipes
-        for( int i = 0; i < numCmds; i++)
-        {
-            waitpid(cpids[i]);
-            Command_delete(cmds[i]);
-        }
+        /*
+        // close off the pipes
         for( int i = 0; i < numCmds-1; i++)
         {
-            close(pipes[i]
+            close(pipes[i].fd[0]);
+            close(pipes[i].fd[1]);
+        }
+        free(pipes);
+        */
+    }
+    return cpid;
+}
+
+void parseLine( Shell * shell )
+{
+    Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
+    int numCmds = Tokenizer_numTokens( tok );          // get the number of tasks
+    if( numCmds == 1 )
+    {
+        pid_t cpid;
+        Command cmd;
+        Command_ctor( &cmd, Tokenizer_next(tok) );
+        cpid = forkexec( &cmd, NULL, 0 );
+        waitpid(cpid);
+        Command_dtor( &cmd );
+    }
+    else if (numCmds > 1)
+    {
+        // need a list of commands and pipes
+        Command **cmds = malloc( sizeof(Command) * numCmds );
+        pid_t cpid;
+        // TODO: smarter way of pipe creation and close in parent
+        for( int i = 0; i < numCmds; i++)
+        {
+            cmds[i] = Command_new(Tokenizer_next(tok)); // new command
+        }
+
+        cpid = forkexec_grp(cmds, numCmds);
+
+        waitpid(-cpid);
+        for( int i = 0; i < numCmds; i++ )
+        {
+            free(cmds[i]);
         }
         free(cmds);
-        free(pipes);
     }
     Tokenizer_delete(tok);
 }
