@@ -4,30 +4,18 @@
 #include <stdlib.h>
 
 #include "tok.h"
+#include "vvector.h"
 
 #define CWD_SIZE 1000
 #define PROMPT_SIZE 1000
 #define LINE_SIZE 2000
 
-typedef struct
-{
-    char *cwd;
-    char *prompt;
-    char *line;
-} Shell;
-
-
 typedef enum
 {
-    ACTIVE,
-    INACTIVE
+    fg,
+    sp,
+    bg
 } ProcessState;
-
-typedef struct
-{
-    pid_t pid;
-    ProcessState state;
-} Process;
 
 typedef struct
 {
@@ -40,6 +28,23 @@ typedef struct
     Pipe *inPipe;
     Pipe *outPipe;
 } Command;
+
+typedef struct
+{
+    pid_t pid;
+    ProcessState state;
+    char *command;
+} Process;
+
+typedef struct
+{
+    char *cwd;
+    char *prompt;
+    char *line;
+
+    VVector *procTable;
+    Process *active;
+} Shell;
 
 /**
  * Constructor
@@ -68,5 +73,9 @@ void Command_ctor( Command *this, const char *line );
 void Command_dtor( Command *this );
 Command *Command_new( const char *line );
 void Command_delete( Command *this );
+void Process_ctor( Process *this, const char *line, pid_t pid, ProcessState state );
+void Process_dtor( Process *this );
+Process * Process_new( const char *line, pid_t pid, ProcessState state );
+void Process_delete( Process *this );
 
 #endif //__SHELL_H__

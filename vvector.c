@@ -7,6 +7,7 @@ struct vvector_str
     int length;     // length of elements
     int size;       // # of total spots
     void** array;   // array of void ptrs
+    void (*del)(void *);    // function to call deletors
 };
 
 VVector* VVector_new(int length)
@@ -19,7 +20,20 @@ VVector* VVector_new(int length)
     {
         vec->array[i] = 0x0;    // Null init
     }
+    vec->del = free;
     return vec;
+}
+
+VVector* VVector_new_reg(int length, void (*func)(void *))
+{
+    VVector* vec = VVector_new(length);
+    VVector_registerDelete(vec, func);
+    return vec;
+}
+
+void VVector_registerDelete( VVector *this, void (*func)(void *))
+{
+    this->del = func;
 }
 
 void VVector_delete(VVector* this)
@@ -39,7 +53,7 @@ void VVector_deleteFull(VVector* this)
     for(int i = 0; i < length; i++)
     {
         if(this->array[i] != 0)
-            free(this->array[i]);
+            this->del(this->array[i]);
     }
     VVector_deleteLite(this);
 }
@@ -95,6 +109,40 @@ void* VVector_get(VVector* this, int index)
     if(index < this->length)
         return this->array[index];
     return 0x0;
+}
+
+int VVector_find(VVector* this, void * thing)
+{
+    int length = this->length;
+    void **arr = this->array;
+    for( int i = 0; i < length; i++ )
+    {
+        if(thing == arr[i])
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void VVector_removeAt(VVector* this, int index )
+{
+    int length = this->length;
+    if( index < 0 || length <= index || length < 1 )
+        return;
+
+    void **arr = this->array;
+    for( int i = index; i < length-1; i++ )
+    {
+        arr[i] = arr[i+1];
+    }
+    arr[length-1] = NULL;
+}
+
+void VVector_remove(VVector* this, void * thing)
+{
+    int loc = VVector_find(this, thing);
+    VVector_removeAt(this, loc);
 }
 
 const void * const * VVector_toArray(VVector* this)

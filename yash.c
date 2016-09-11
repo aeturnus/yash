@@ -62,19 +62,19 @@ int parseCommand( Command *cmd, char **argList[] )
         token = Tokenizer_next(tok);
         if( !strcmp( token, ">" ) )
         {
-            if( !Tokenizer_hasTokens )
+            if( !Tokenizer_hasTokens(tok) )
                 return 0;
             replaceFile( STDOUT_FILENO, Tokenizer_next(tok), O_WRONLY | O_CREAT, RWURGRO );
         }
         else if ( !strcmp( token, "2>" ) )
         {
-            if( !Tokenizer_hasTokens )
+            if( !Tokenizer_hasTokens(tok) )
                 return 0;
             replaceFile( STDERR_FILENO, Tokenizer_next(tok), O_WRONLY | O_CREAT, RWURGRO );
         }
         else if ( !strcmp( token, "<" ) )
         {
-            if( !Tokenizer_hasTokens )
+            if( !Tokenizer_hasTokens(tok) )
                 return 0;
             replaceFile( STDIN_FILENO, Tokenizer_next(tok), O_RDONLY, RWURGRO );
         }
@@ -203,25 +203,49 @@ pid_t forkexec_grp( Command **cmds, int numCmds )
     return cpid;
 }
 
+void addProc( Shell * shell, Process * proc )
+{
+    VVector_push( shell->procTable, proc );
+}
+void remProc( Shell * shell, Process * proc )
+{
+    VVector_remove( shell->procTable, proc );
+}
+
+
 void parseLine( Shell * shell )
 {
     Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
-    int numCmds = Tokenizer_numTokens( tok );          // get the number of tasks
+    int numCmds = Tokenizer_numTokens( tok );           // get the number of tasks
+    //ProcessState state = Tokenizer_contains(tok,"&")? bg: fg;   // figure this out from presence of &
+    ProcessState state = strchr(shell->line,'&')? bg: fg;   // figure this out from presence of &
+    pid_t cpid;
     if( numCmds == 1 )
     {
-        pid_t cpid;
         Command cmd;
         Command_ctor( &cmd, Tokenizer_next(tok) );
         cpid = forkexec( &cmd, NULL, 0 );
-        waitpid(cpid);
+
+        Process *child = Process_new( shell->line, cpid, state );
+        addProc( shell, child );
+        if( state == fg )
+        {
+            shell->active = child;
+            waitpid(child->pid);
+            remProc( shell, child );
+        }
+        else if ( state == bg )
+        {
+            printf("bg %d\n", child->pid);
+        }
+
         Command_dtor( &cmd );
     }
     else if (numCmds > 1)
     {
         // need a list of commands and pipes
         Command **cmds = malloc( sizeof(Command) * numCmds );
-        pid_t cpid;
-        // TODO: smarter way of pipe creation and close in parent
+
         for( int i = 0; i < numCmds; i++)
         {
             cmds[i] = Command_new(Tokenizer_next(tok)); // new command
