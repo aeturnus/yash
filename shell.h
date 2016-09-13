@@ -43,6 +43,7 @@ typedef struct
     char *line;
 
     VVector *procTable;
+    VVector *suspStack;
     Process *active;
 } Shell;
 

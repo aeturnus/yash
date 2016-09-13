@@ -16,6 +16,7 @@ Shell_ctor( Shell *this )
     this->line[0] = '\0';
 
     this->procTable = VVector_new_reg( 1, &Process_delete );
+    this->suspStack = VVector_new( 1 );
 
     this->active = NULL;
 }
@@ -33,6 +34,9 @@ Shell_dtor( Shell *this )
 
     VVector_deleteFull(this->procTable);
     this->procTable = NULL;
+
+    VVector_delete(this->suspStack);
+    this->suspStack = NULL;
 
     this->active = NULL;
 }

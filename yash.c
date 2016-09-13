@@ -12,13 +12,9 @@
 #include "tok.h"
 #include "vvector.h"
 
+// must-have globals
 pid_t pid;
-
-/**** Signal handlers ****/
-
-
-
-/*************************/
+Shell *shell;
 
 
 /* prompts and reads a line into a buffer. very sad :( gets() */
@@ -26,8 +22,52 @@ void prompt( Shell *sh )
 {
     // print prompt
     printf("%s", sh->prompt );
-    // TODO: null check
-    gets( sh->line );
+}
+
+void readLine( Shell *sh )
+{
+    size_t pos = 0;
+    char* buffer = sh->line;
+    char c;
+    while(1)
+    {
+        //Read character
+        c = getchar();
+
+        if(c == '\n')
+        {
+            buffer[pos] = '\0';
+            return;
+        }
+        else if (c == EOF )
+        {
+            exit(0);
+        }
+        else if (c == "\027")   //escape character detection
+        {
+
+        }
+        else
+        {
+            buffer[pos] = c;
+        }
+        pos++;
+        /*
+        //Reallocate if bigger than buffer size
+        if(pos >= buffSize)
+        {
+            size_t newSize = buffSize * 2;
+            char* tempBuffer = realloc(buffer, buffSize);
+            if(tempBuffer == 0) // if realloc didn't have enough space
+            {
+                tempBuffer = malloc(newSize);
+                memcpy(tempBuffer,buffer,pos-1);
+                free(buffer);
+            }
+            buffer = tempBuffer;    //set buffer to equal the new buffer
+        }
+        */
+    }
 }
 
 
@@ -222,24 +262,39 @@ void parseLine( Shell * shell )
     pid_t cpid;
     if( numCmds == 1 )
     {
-        Command cmd;
-        Command_ctor( &cmd, Tokenizer_next(tok) );
-        cpid = forkexec( &cmd, NULL, 0 );
-
-        Process *child = Process_new( shell->line, cpid, state );
-        addProc( shell, child );
-        if( state == fg )
+        if( !strcmp(shell->line,"fg") )
         {
-            shell->active = child;
-            waitpid(child->pid);
-            remProc( shell, child );
         }
-        else if ( state == bg )
+        else if (!strcmp(shell->line,"bg"))
         {
-            printf("bg %d\n", child->pid);
         }
+        else
+        {
 
-        Command_dtor( &cmd );
+            Tokenizer *cmdtok = Tokenizer_new(Tokenizer_next(tok), "&");
+
+            Command cmd;
+            Command_ctor( &cmd, Tokenizer_next(cmdtok) );
+            cpid = forkexec( &cmd, NULL, 0 );
+
+            Process *child = Process_new( shell->line, cpid, state );
+            addProc( shell, child );
+            if( state == fg )
+            {
+                shell->active = child;
+                waitpid(child->pid);
+                shell->active = NULL;
+                remProc( shell, child );
+            }
+            else if ( state == bg )
+            {
+                // let it run
+                printf("bg %d\n", child->pid);
+            }
+
+            Command_dtor( &cmd );
+            Tokenizer_delete(cmdtok);
+        }
     }
     else if (numCmds > 1)
     {
@@ -263,21 +318,48 @@ void parseLine( Shell * shell )
     Tokenizer_delete(tok);
 }
 
+/**** Signal handlers ****/
+void sigtstp_handler(int signo)
+{
+    if( !shell->active )
+    {
+        printf("\n");
+        prompt(shell);
+        return;
+    }
+    Process *active = shell->active;
+    // TODO: non-VVector-specific pushing
+    active->state = sp;                       // suspend it
+    VVector_push(shell->procTable, active);  // push it onto the susp stack
+    shell->active = NULL;
+    // suspend active
+    kill( active->pid, SIGTSTP );
+    printf("Suspended %s (%d)\n", active->command, active->pid);
+    prompt(shell);
+}
+
+
+/*************************/
+
 int main( int argc, char *argv[] )
 {
-    pid = getpid();
-
     // setup shell struct
     Shell *yash = Shell_new();
     Shell_setPrompt( yash, "# " );
 
+    // initialize globals
+    shell = yash;
+    pid = getpid();
+
     // need to register handlers
+    signal( SIGTSTP, sigtstp_handler );
 
     // execution loop
     // must read in lines, then parse them
     while(1)
     {
         prompt( yash );
+        readLine( yash );
         parseLine( yash );
     }
 }
