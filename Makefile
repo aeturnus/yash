@@ -1,6 +1,6 @@
 CC = gcc
 LD = ld
-CFLAGS =-Wall -Wextra -g
+CFLAGS =-Wall -Wextra -g -D DEBUG_ENABLE
 SOURCES = $(wildcard *.c)
 EXECUTABLE = yash
 
@@ -26,5 +26,5 @@ test:
 mem:
 	valgrind --leak-check=yes ./$(EXECUTABLE)
 
-debug:
+gdb:
 	gdb ./$(EXECUTABLE)

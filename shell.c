@@ -15,7 +15,7 @@ Shell_ctor( Shell *this )
     this->line = malloc( LINE_SIZE * sizeof(char) + 1 );
     this->line[0] = '\0';
 
-    this->procTable = VVector_new_reg( 1, &Process_delete );
+    this->jobTable = VVector_new_reg( 1, &Job_delete );
     this->suspStack = VVector_new( 1 );
 
     this->active = NULL;
@@ -32,8 +32,8 @@ Shell_dtor( Shell *this )
     free(this->line);
     this->line = NULL;
 
-    VVector_deleteFull(this->procTable);
-    this->procTable = NULL;
+    VVector_deleteFull(this->jobTable);
+    this->jobTable = NULL;
 
     VVector_delete(this->suspStack);
     this->suspStack = NULL;
@@ -87,27 +87,27 @@ void Command_delete( Command *this )
     free( this );
 }
 
-void Process_ctor( Process *this, const char * line, pid_t pid, ProcessState state )
+void Job_ctor( Job *this, const char * line, pid_t pid, JobState state )
 {
     this->pid = pid;
     this->state = state;
     this->command = strdup(line);
 }
 
-void Process_dtor( Process *this )
+void Job_dtor( Job *this )
 {
     free(this->command);
 }
 
-Process * Process_new( const char * line, pid_t pid, ProcessState state )
+Job * Job_new( const char * line, pid_t pid, JobState state )
 {
-    Process * out = malloc(sizeof(Process));
-    Process_ctor(out, line, pid, state);
+    Job * out = malloc(sizeof(Job));
+    Job_ctor(out, line, pid, state);
     return out;
 }
 
-void Process_delete( Process *this )
+void Job_delete( Job *this )
 {
-    Process_dtor(this);
+    Job_dtor(this);
     free(this);
 }

@@ -11,6 +11,7 @@
 #include "shell.h"
 #include "tok.h"
 #include "vvector.h"
+#include "debug.h"
 
 // must-have globals
 pid_t pid;
@@ -182,6 +183,7 @@ void exec( Command *cmd, Pipe *pipes, int numPipes )
     //TODO: copy my environment variables
     execvp(argList[0], argList);
     free(argList);
+    exit( 0 );
 }
 
 pid_t forkexec( Command *cmd, Pipe *pipes, int numPipes )
@@ -203,7 +205,7 @@ pid_t forkexec_grp( Command **cmds, int numCmds )
     pid_t cpid = fork();
     if( cpid == 0 )
     {
-        setsid();   // new session!
+        setpgid(0,0);
         // setup the pipes
         Pipe *pipes = malloc( sizeof(Pipe) * (numCmds-1) );
         for( int i = 0; i < numCmds-1; i++)
@@ -243,63 +245,91 @@ pid_t forkexec_grp( Command **cmds, int numCmds )
     return cpid;
 }
 
-void addProc( Shell * shell, Process * proc )
+void addJob( Shell * shell, Job * job )
 {
-    VVector_push( shell->procTable, proc );
+    VVector_push( shell->jobTable, job );
 }
-void remProc( Shell * shell, Process * proc )
+void remJob( Shell * shell, Job * job )
 {
-    VVector_remove( shell->procTable, proc );
+    VVector_remove( shell->jobTable, job );
+}
+void pushSusp( Shell * shell, Job * job)
+{
+    VVector_push( shell->suspStack, job );
+}
+void popSusp( Shell * shell, Job ** jobHandle)
+{
+    *jobHandle = VVector_pop( shell->suspStack );
 }
 
-
-void parseLine( Shell * shell )
+void waitActive( Shell *shell );
+// handle builtins:
+// fg, bg, jobs
+int parseBuiltin( Shell * shell )
 {
-    Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
-    int numCmds = Tokenizer_numTokens( tok );           // get the number of tasks
-    //ProcessState state = Tokenizer_contains(tok,"&")? bg: fg;   // figure this out from presence of &
-    ProcessState state = strchr(shell->line,'&')? bg: fg;   // figure this out from presence of &
-    pid_t cpid;
-    if( numCmds == 1 )
+    if( !strcmp(shell->line, "fg" ) )
     {
-        if( !strcmp(shell->line,"fg") )
+        popSusp( shell, &shell->active );
+        if( shell->active )
         {
-        }
-        else if (!strcmp(shell->line,"bg"))
-        {
+            shell->active->state = fg;
+            printf("fg %d\n", shell->active->pid);
+            kill( shell->active->pid, SIGCONT );
+            waitActive(shell);
         }
         else
         {
-
-            Tokenizer *cmdtok = Tokenizer_new(Tokenizer_next(tok), "&");
-
-            Command cmd;
-            Command_ctor( &cmd, Tokenizer_next(cmdtok) );
-            cpid = forkexec( &cmd, NULL, 0 );
-
-            Process *child = Process_new( shell->line, cpid, state );
-            addProc( shell, child );
-            if( state == fg )
-            {
-                shell->active = child;
-                waitpid(child->pid);
-                shell->active = NULL;
-                remProc( shell, child );
-            }
-            else if ( state == bg )
-            {
-                // let it run
-                printf("bg %d\n", child->pid);
-            }
-
-            Command_dtor( &cmd );
-            Tokenizer_delete(cmdtok);
+            printf("No suspended jobs\n");
         }
+        return 1;
+    }
+    else if ( !strcmp(shell->line, "bg") )
+    {
+        return 1;
+    }
+    return 0;
+}
+
+void parseLine( Shell * shell )
+{
+    if( parseBuiltin(shell) )
+        return;
+
+    Tokenizer *tok = Tokenizer_new( shell->line, "|" ); // split it amongst pipes
+    int numCmds = Tokenizer_numTokens( tok );           // get the number of tasks
+    //JobState state = Tokenizer_contains(tok,"&")? bg: fg;   // figure this out from presence of &
+    JobState state = strchr(shell->line,'&')? bg: fg;   // figure this out from presence of &
+    pid_t cpid;
+    if( numCmds == 1 )
+    {
+
+        Tokenizer *cmdtok = Tokenizer_new(Tokenizer_next(tok), "&");
+
+        Command cmd;
+        Command_ctor( &cmd, Tokenizer_next(cmdtok) );
+        cpid = forkexec( &cmd, NULL, 0 );
+
+        Job *child = Job_new( shell->line, cpid, state );
+        addJob( shell, child );
+        if( state == fg )
+        {
+            shell->active = child;
+            waitpid(child->pid);
+
+        }
+        else if ( state == bg )
+        {
+            // let it run
+            printf("bg %d\n", child->pid);
+        }
+
+        Command_dtor( &cmd );
+        Tokenizer_delete( cmdtok );
     }
     else if (numCmds > 1)
     {
         // need a list of commands and pipes
-        Command **cmds = malloc( sizeof(Command) * numCmds );
+        Command **cmds = malloc( sizeof(Command *) * numCmds );
 
         for( int i = 0; i < numCmds; i++)
         {
@@ -321,25 +351,66 @@ void parseLine( Shell * shell )
 /**** Signal handlers ****/
 void sigtstp_handler(int signo)
 {
+    //dprintf("SIGSTP received from terminal\n");
+    prompt(shell);
     if( !shell->active )
     {
-        printf("\n");
-        prompt(shell);
+        //printf("\n");
         return;
     }
-    Process *active = shell->active;
-    // TODO: non-VVector-specific pushing
-    active->state = sp;                       // suspend it
-    VVector_push(shell->procTable, active);  // push it onto the susp stack
-    shell->active = NULL;
+
     // suspend active
-    kill( active->pid, SIGTSTP );
-    printf("Suspended %s (%d)\n", active->command, active->pid);
+    kill( shell->active->pid, SIGTSTP );
+    //printf("Suspended %s (%d)\n", active->command, active->pid);
+}
+
+void sigint_handler(int signo)
+{
+    //dprintf("SIGINT received from terminal\n");
     prompt(shell);
+    if( !shell->active )
+    {
+        //printf("\n");
+        return;
+    }
+    // interrupt active
+    kill( shell->active->pid, SIGINT );
 }
 
 
 /*************************/
+
+void waitActive( Shell *shell )
+{
+    int wstatus;
+    int wpid;
+    if( shell->active )
+    {
+        dprintf("Waiting on %d \"%s\"\n", shell->active->pid, shell->active->command);
+        wpid = waitpid( shell->active->pid, &wstatus, WUNTRACED | WCONTINUED );
+        if( WIFEXITED(wstatus) )
+        {
+            dprintf("%d exited\n", wpid);
+            remJob( shell, shell->active );
+            shell->active = NULL;
+        }
+        else if ( WIFSTOPPED(wstatus) )
+        {
+            dprintf("%d stopped\n", wpid);
+            shell->active->state = sp;              // suspend it
+            pushSusp(shell, shell->active);  // push it onto the susp stack
+            shell->active = NULL;
+        }
+        else if ( WIFCONTINUED(wstatus) )
+        {
+            dprintf("%d continued\n", wpid);
+        }
+    }
+    else
+    {
+        //dprintf("No fg process\n");
+    }
+}
 
 int main( int argc, char *argv[] )
 {
@@ -353,6 +424,7 @@ int main( int argc, char *argv[] )
 
     // need to register handlers
     signal( SIGTSTP, sigtstp_handler );
+    signal( SIGINT, sigint_handler );
 
     // execution loop
     // must read in lines, then parse them
@@ -361,5 +433,6 @@ int main( int argc, char *argv[] )
         prompt( yash );
         readLine( yash );
         parseLine( yash );
+        waitActive( yash );
     }
 }

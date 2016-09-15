@@ -15,7 +15,7 @@ typedef enum
     fg,
     sp,
     bg
-} ProcessState;
+} JobState;
 
 typedef struct
 {
@@ -32,9 +32,9 @@ typedef struct
 typedef struct
 {
     pid_t pid;
-    ProcessState state;
+    JobState state;
     char *command;
-} Process;
+} Job;
 
 typedef struct
 {
@@ -42,9 +42,9 @@ typedef struct
     char *prompt;
     char *line;
 
-    VVector *procTable;
+    VVector *jobTable;
     VVector *suspStack;
-    Process *active;
+    Job *active;
 } Shell;
 
 /**
@@ -74,9 +74,9 @@ void Command_ctor( Command *this, const char *line );
 void Command_dtor( Command *this );
 Command *Command_new( const char *line );
 void Command_delete( Command *this );
-void Process_ctor( Process *this, const char *line, pid_t pid, ProcessState state );
-void Process_dtor( Process *this );
-Process * Process_new( const char *line, pid_t pid, ProcessState state );
-void Process_delete( Process *this );
+void Job_ctor( Job *this, const char *line, pid_t pid, JobState state );
+void Job_dtor( Job *this );
+Job * Job_new( const char *line, pid_t pid, JobState state );
+void Job_delete( Job *this );
 
 #endif //__SHELL_H__
